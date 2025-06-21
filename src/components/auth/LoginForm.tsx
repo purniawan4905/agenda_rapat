@@ -49,11 +49,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
       <CardHeader>
         <h2 className="text-2xl font-bold text-center text-gray-900">Masuk</h2>
         <p className="text-center text-gray-600">Akses sistem manajemen agenda rapat</p>
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+        {/* <div className="mt-4 p-3 bg-blue-50 rounded-lg">
           <p className="text-sm text-blue-800 font-medium">Akun Demo:</p>
           <p className="text-xs text-blue-600">sukmaayutirtaningrum@gmail.com / Sukma@1234</p>
-          {/* <p className="text-xs text-blue-600">john@rapat.com / user123</p> */}
-        </div>
+          <p className="text-xs text-blue-600">john@rapat.com / user123</p>
+        </div> */}
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
