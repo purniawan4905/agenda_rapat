@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, FileText, Edit, Calendar, User } from 'lucide-react';
+import { Plus, FileText, Edit, Calendar, User, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -10,67 +10,141 @@ import { useForm } from 'react-hook-form';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { MeetingMinutes } from '../types';
+import { exportMeetingToPDF } from '../utils/pdfExport';
+import Swal from 'sweetalert2';
 
 interface MinutesFormData {
-  meetingId: string;
+  meeting: string;
   content: string;
+  summary: string;
   actionItems: string;
   decisions: string;
+  keyPoints: string;
 }
 
 export const Minutes: React.FC = () => {
-  const { meetings, meetingMinutes, addMeetingMinutes, updateMeetingMinutes } = useApp();
+  const { meetings, meetingMinutes, attendances, addMeetingMinutes, updateMeetingMinutes, isLoading } = useApp();
   const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMinutes, setEditingMinutes] = useState<MeetingMinutes | null>(null);
   
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MinutesFormData>();
 
-  const onSubmit = (data: MinutesFormData) => {
-    const minutesData = {
-      ...data,
-      actionItems: data.actionItems.split('\n').filter(item => item.trim()).map((item, index) => ({
-        id: Date.now().toString() + index,
-        description: item.trim(),
-        assignedTo: 'Belum Ditugaskan',
-        dueDate: new Date(),
-        status: 'pending' as const
-      })),
-      decisions: data.decisions.split('\n').filter(item => item.trim()),
-      createdBy: user?.email || ''
-    };
+  const onSubmit = async (data: MinutesFormData) => {
+    try {
+      const minutesData = {
+        meeting: data.meeting,
+        content: data.content,
+        summary: data.summary,
+        actionItems: data.actionItems.split('\n').filter(item => item.trim()).map((item, index) => ({
+          description: item.trim(),
+          assignedTo: {
+            name: 'Belum Ditugaskan',
+            email: ''
+          },
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+          status: 'pending' as const,
+          priority: 'medium' as const
+        })),
+        decisions: data.decisions.split('\n').filter(item => item.trim()).map(item => ({
+          description: item.trim(),
+          impact: 'medium' as const
+        })),
+        keyPoints: data.keyPoints.split('\n').filter(item => item.trim()),
+        isApproved: false
+      };
 
-    if (editingMinutes) {
-      updateMeetingMinutes(editingMinutes.id, minutesData);
-    } else {
-      addMeetingMinutes(minutesData);
+      if (editingMinutes) {
+        await updateMeetingMinutes(editingMinutes._id || editingMinutes.id!, minutesData);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Notulensi berhasil diperbarui',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } else {
+        await addMeetingMinutes(minutesData);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Notulensi berhasil dibuat',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      }
+
+      setIsModalOpen(false);
+      setEditingMinutes(null);
+      reset();
+    } catch (error) {
+      console.error('Error saving minutes:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal menyimpan notulensi',
+        icon: 'error'
+      });
     }
-
-    setIsModalOpen(false);
-    setEditingMinutes(null);
-    reset();
   };
 
   const handleEdit = (minutes: MeetingMinutes) => {
     setEditingMinutes(minutes);
     reset({
-      meetingId: minutes.meetingId,
+      meeting: minutes.meeting,
       content: minutes.content,
+      summary: minutes.summary || '',
       actionItems: minutes.actionItems.map(item => item.description).join('\n'),
-      decisions: minutes.decisions.join('\n')
+      decisions: minutes.decisions.map(d => typeof d === 'string' ? d : d.description).join('\n'),
+      keyPoints: minutes.keyPoints?.join('\n') || ''
     });
     setIsModalOpen(true);
   };
 
+  const handleExportPDF = async (minutes: MeetingMinutes) => {
+    try {
+      const meeting = meetings.find(m => (m._id || m.id) === minutes.meeting);
+      const meetingAttendances = attendances.filter(a => a.meeting === minutes.meeting);
+      
+      if (meeting) {
+        await exportMeetingToPDF(meeting, minutes, meetingAttendances);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Notulensi berhasil diekspor ke PDF',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal mengekspor PDF',
+        icon: 'error'
+      });
+    }
+  };
+
   const getMeetingTitle = (meetingId: string) => {
-    const meeting = meetings.find(m => m.id === meetingId);
+    const meeting = meetings.find(m => (m._id || m.id) === meetingId);
     return meeting?.title || 'Rapat Tidak Diketahui';
   };
 
   const getMeetingDate = (meetingId: string) => {
-    const meeting = meetings.find(m => m.id === meetingId);
+    const meeting = meetings.find(m => (m._id || m.id) === meetingId);
     return meeting ? format(new Date(meeting.date), 'dd MMM yyyy', { locale: id }) : 'Tanggal Tidak Diketahui';
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat data notulensi...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -84,23 +158,50 @@ export const Minutes: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {meetingMinutes.map((minutes) => (
-          <Card key={minutes.id} className="hover:shadow-lg transition-shadow">
+          <Card key={minutes._id || minutes.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 mb-1">{getMeetingTitle(minutes.meetingId)}</h3>
-                  <p className="text-sm text-gray-600">{getMeetingDate(minutes.meetingId)}</p>
+                  <h3 className="font-semibold text-gray-900 mb-1">{getMeetingTitle(minutes.meeting)}</h3>
+                  <p className="text-sm text-gray-600">{getMeetingDate(minutes.meeting)}</p>
+                  {minutes.isApproved && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                      Disetujui
+                    </span>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleEdit(minutes)}
-                  className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                >
-                  <Edit size={14} />
-                </button>
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => handleExportPDF(minutes)}
+                    className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                    title="Export PDF"
+                  >
+                    <Download size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleEdit(minutes)}
+                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Edit"
+                  >
+                    <Edit size={14} />
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-4">
+                {minutes.summary && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Ringkasan</h4>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {minutes.summary.length > 150 
+                        ? `${minutes.summary.substring(0, 150)}...` 
+                        : minutes.summary
+                      }
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-2">Catatan Rapat</h4>
                   <p className="text-sm text-gray-600 leading-relaxed">
@@ -116,7 +217,7 @@ export const Minutes: React.FC = () => {
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Item Tindakan</h4>
                     <ul className="text-sm text-gray-600 space-y-1">
                       {minutes.actionItems.slice(0, 3).map((item) => (
-                        <li key={item.id} className="flex items-start">
+                        <li key={item._id || item.id} className="flex items-start">
                           <span className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
                           {item.description}
                         </li>
@@ -137,7 +238,7 @@ export const Minutes: React.FC = () => {
                       {minutes.decisions.slice(0, 2).map((decision, index) => (
                         <li key={index} className="flex items-start">
                           <span className="w-2 h-2 bg-green-500 rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
-                          {decision}
+                          {typeof decision === 'string' ? decision : decision.description}
                         </li>
                       ))}
                       {minutes.decisions.length > 2 && (
@@ -153,7 +254,7 @@ export const Minutes: React.FC = () => {
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <div className="flex items-center">
                       <User size={12} className="mr-1" />
-                      {minutes.createdBy}
+                      {typeof minutes.createdBy === 'object' ? minutes.createdBy.name : minutes.createdBy}
                     </div>
                     <div className="flex items-center">
                       <Calendar size={12} className="mr-1" />
@@ -193,19 +294,29 @@ export const Minutes: React.FC = () => {
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">Rapat</label>
             <select
-              {...register('meetingId', { required: 'Rapat wajib dipilih' })}
+              {...register('meeting', { required: 'Rapat wajib dipilih' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">Pilih rapat</option>
               {meetings.map(meeting => (
-                <option key={meeting.id} value={meeting.id}>
+                <option key={meeting._id || meeting.id} value={meeting._id || meeting.id}>
                   {meeting.title} - {format(new Date(meeting.date), 'dd MMM yyyy', { locale: id })}
                 </option>
               ))}
             </select>
-            {errors.meetingId && (
-              <p className="text-sm text-red-600">{errors.meetingId.message}</p>
+            {errors.meeting && (
+              <p className="text-sm text-red-600">{errors.meeting.message}</p>
             )}
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">Ringkasan Rapat</label>
+            <textarea
+              {...register('summary')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              rows={3}
+              placeholder="Ringkasan singkat tentang rapat..."
+            />
           </div>
           
           <div className="space-y-1">
@@ -238,6 +349,16 @@ export const Minutes: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               rows={3}
               placeholder="Menyetujui peningkatan anggaran sebesar 10%&#10;Memindahkan deadline ke bulan depan&#10;Menugaskan manajer proyek baru"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">Poin Kunci (satu per baris)</label>
+            <textarea
+              {...register('keyPoints')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              rows={3}
+              placeholder="Poin-poin penting yang perlu diingat..."
             />
           </div>
           

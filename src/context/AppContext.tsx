@@ -1,21 +1,24 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Meeting, Attendance, MeetingMinutes, Notification } from '../types';
+import { apiService } from '../services/api';
 
 interface AppContextType {
   meetings: Meeting[];
   attendances: Attendance[];
   meetingMinutes: MeetingMinutes[];
   notifications: Notification[];
-  addMeeting: (meeting: Omit<Meeting, 'id' | 'createdAt'>) => void;
-  updateMeeting: (id: string, meeting: Partial<Meeting>) => void;
-  deleteMeeting: (id: string) => void;
-  addAttendance: (attendance: Omit<Attendance, 'id'>) => void;
-  updateAttendance: (id: string, attendance: Partial<Attendance>) => void;
-  addMeetingMinutes: (minutes: Omit<MeetingMinutes, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateMeetingMinutes: (id: string, minutes: Partial<MeetingMinutes>) => void;
-  addNotification: (notification: Omit<Notification, 'id' | 'createdAt'>) => void;
-  markNotificationAsRead: (id: string) => void;
-  clearNotifications: () => void;
+  isLoading: boolean;
+  addMeeting: (meeting: any) => Promise<void>;
+  updateMeeting: (id: string, meeting: any) => Promise<void>;
+  deleteMeeting: (id: string) => Promise<void>;
+  addAttendance: (attendance: any) => Promise<void>;
+  updateAttendance: (id: string, attendance: any) => Promise<void>;
+  addMeetingMinutes: (minutes: any) => Promise<void>;
+  updateMeetingMinutes: (id: string, minutes: any) => Promise<void>;
+  markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -33,108 +36,159 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [attendances, setAttendances] = useState<Attendance[]>([]);
   const [meetingMinutes, setMeetingMinutes] = useState<MeetingMinutes[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refreshData = async () => {
+    try {
+      setIsLoading(true);
+      const [meetingsRes, attendanceRes, minutesRes, notificationsRes] = await Promise.all([
+        apiService.getMeetings(),
+        apiService.getAttendance(),
+        apiService.getMinutes(),
+        apiService.getNotifications()
+      ]);
+
+      if (meetingsRes.success) {
+        setMeetings(meetingsRes.data.meetings || []);
+      }
+      if (attendanceRes.success) {
+        setAttendances(attendanceRes.data.attendance || []);
+      }
+      if (minutesRes.success) {
+        setMeetingMinutes(minutesRes.data.minutes || []);
+      }
+      if (notificationsRes.success) {
+        setNotifications(notificationsRes.data.notifications || []);
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Muat data dari localStorage
-    const storedMeetings = localStorage.getItem('meetings');
-    const storedAttendances = localStorage.getItem('attendances');
-    const storedMinutes = localStorage.getItem('meetingMinutes');
-    const storedNotifications = localStorage.getItem('notifications');
-
-    if (storedMeetings) setMeetings(JSON.parse(storedMeetings));
-    if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
-    if (storedMinutes) setMeetingMinutes(JSON.parse(storedMinutes));
-    if (storedNotifications) setNotifications(JSON.parse(storedNotifications));
+    refreshData();
   }, []);
 
-  const addMeeting = (meeting: Omit<Meeting, 'id' | 'createdAt'>) => {
-    const newMeeting: Meeting = {
-      ...meeting,
-      id: Date.now().toString(),
-      createdAt: new Date()
-    };
-    const updatedMeetings = [...meetings, newMeeting];
-    setMeetings(updatedMeetings);
-    localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
-
-    // Tambah notifikasi untuk rapat baru
-    addNotification({
-      type: 'meeting-reminder',
-      title: 'Rapat Baru Dijadwalkan',
-      message: `Rapat "${meeting.title}" telah dijadwalkan pada ${new Date(meeting.date).toLocaleDateString('id-ID')}`,
-      isRead: false,
-      relatedMeetingId: newMeeting.id
-    });
+  const addMeeting = async (meetingData: any) => {
+    try {
+      const response = await apiService.createMeeting(meetingData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error adding meeting:', error);
+      throw error;
+    }
   };
 
-  const updateMeeting = (id: string, meeting: Partial<Meeting>) => {
-    const updatedMeetings = meetings.map(m => m.id === id ? { ...m, ...meeting } : m);
-    setMeetings(updatedMeetings);
-    localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+  const updateMeeting = async (id: string, meetingData: any) => {
+    try {
+      const response = await apiService.updateMeeting(id, meetingData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error updating meeting:', error);
+      throw error;
+    }
   };
 
-  const deleteMeeting = (id: string) => {
-    const updatedMeetings = meetings.filter(m => m.id !== id);
-    setMeetings(updatedMeetings);
-    localStorage.setItem('meetings', JSON.stringify(updatedMeetings));
+  const deleteMeeting = async (id: string) => {
+    try {
+      const response = await apiService.deleteMeeting(id);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+      throw error;
+    }
   };
 
-  const addAttendance = (attendance: Omit<Attendance, 'id'>) => {
-    const newAttendance: Attendance = {
-      ...attendance,
-      id: Date.now().toString()
-    };
-    const updatedAttendances = [...attendances, newAttendance];
-    setAttendances(updatedAttendances);
-    localStorage.setItem('attendances', JSON.stringify(updatedAttendances));
+  const addAttendance = async (attendanceData: any) => {
+    try {
+      const response = await apiService.recordAttendance(attendanceData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error adding attendance:', error);
+      throw error;
+    }
   };
 
-  const updateAttendance = (id: string, attendance: Partial<Attendance>) => {
-    const updatedAttendances = attendances.map(a => a.id === id ? { ...a, ...attendance } : a);
-    setAttendances(updatedAttendances);
-    localStorage.setItem('attendances', JSON.stringify(updatedAttendances));
+  const updateAttendance = async (id: string, attendanceData: any) => {
+    try {
+      const response = await apiService.updateAttendance(id, attendanceData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error updating attendance:', error);
+      throw error;
+    }
   };
 
-  const addMeetingMinutes = (minutes: Omit<MeetingMinutes, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newMinutes: MeetingMinutes = {
-      ...minutes,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    const updatedMinutes = [...meetingMinutes, newMinutes];
-    setMeetingMinutes(updatedMinutes);
-    localStorage.setItem('meetingMinutes', JSON.stringify(updatedMinutes));
+  const addMeetingMinutes = async (minutesData: any) => {
+    try {
+      const response = await apiService.createMinutes(minutesData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error adding meeting minutes:', error);
+      throw error;
+    }
   };
 
-  const updateMeetingMinutes = (id: string, minutes: Partial<MeetingMinutes>) => {
-    const updatedMinutes = meetingMinutes.map(m => 
-      m.id === id ? { ...m, ...minutes, updatedAt: new Date() } : m
-    );
-    setMeetingMinutes(updatedMinutes);
-    localStorage.setItem('meetingMinutes', JSON.stringify(updatedMinutes));
+  const updateMeetingMinutes = async (id: string, minutesData: any) => {
+    try {
+      const response = await apiService.updateMinutes(id, minutesData);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error updating meeting minutes:', error);
+      throw error;
+    }
   };
 
-  const addNotification = (notification: Omit<Notification, 'id' | 'createdAt'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: Date.now().toString(),
-      createdAt: new Date()
-    };
-    const updatedNotifications = [newNotification, ...notifications];
-    setNotifications(updatedNotifications);
-    localStorage.setItem('notifications', JSON.stringify(updatedNotifications));
+  const markNotificationAsRead = async (id: string) => {
+    try {
+      const response = await apiService.markNotificationAsRead(id);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      throw error;
+    }
   };
 
-  const markNotificationAsRead = (id: string) => {
-    const updatedNotifications = notifications.map(n => n.id === id ? { ...n, isRead: true } : n);
-    setNotifications(updatedNotifications);
-    localStorage.setItem('notifications', JSON.stringify(updatedNotifications));
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const response = await apiService.markAllNotificationsAsRead();
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      throw error;
+    }
   };
 
-  const clearNotifications = () => {
-    setNotifications([]);
-    localStorage.removeItem('notifications');
+  const deleteNotification = async (id: string) => {
+    try {
+      const response = await apiService.deleteNotification(id);
+      if (response.success) {
+        await refreshData();
+      }
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      throw error;
+    }
   };
 
   return (
@@ -143,6 +197,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attendances,
       meetingMinutes,
       notifications,
+      isLoading,
       addMeeting,
       updateMeeting,
       deleteMeeting,
@@ -150,9 +205,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateAttendance,
       addMeetingMinutes,
       updateMeetingMinutes,
-      addNotification,
       markNotificationAsRead,
-      clearNotifications
+      markAllNotificationsAsRead,
+      deleteNotification,
+      refreshData
     }}>
       {children}
     </AppContext.Provider>

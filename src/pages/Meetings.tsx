@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -10,6 +10,8 @@ import { useForm } from 'react-hook-form';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Meeting } from '../types';
+import { exportMeetingToPDF } from '../utils/pdfExport';
+import Swal from 'sweetalert2';
 
 interface MeetingFormData {
   title: string;
@@ -22,31 +24,62 @@ interface MeetingFormData {
 }
 
 export const Meetings: React.FC = () => {
-  const { meetings, addMeeting, updateMeeting, deleteMeeting } = useApp();
+  const { meetings, addMeeting, updateMeeting, deleteMeeting, meetingMinutes, attendances, isLoading } = useApp();
   const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MeetingFormData>();
 
-  const onSubmit = (data: MeetingFormData) => {
-    const meetingData = {
-      ...data,
-      date: new Date(data.date),
-      attendees: data.attendees.split(',').map(email => email.trim()),
-      organizer: user?.email || '',
-      status: 'scheduled' as const
-    };
+  const onSubmit = async (data: MeetingFormData) => {
+    try {
+      const attendeesList = data.attendees.split(',').map(email => ({
+        email: email.trim(),
+        name: email.trim().split('@')[0],
+        status: 'invited' as const
+      }));
 
-    if (editingMeeting) {
-      updateMeeting(editingMeeting.id, meetingData);
-    } else {
-      addMeeting(meetingData);
+      const meetingData = {
+        title: data.title,
+        description: data.description,
+        date: data.date,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        location: data.location,
+        attendees: attendeesList
+      };
+
+      if (editingMeeting) {
+        await updateMeeting(editingMeeting._id || editingMeeting.id!, meetingData);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Rapat berhasil diperbarui',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } else {
+        await addMeeting(meetingData);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Rapat berhasil dibuat',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      }
+
+      setIsModalOpen(false);
+      setEditingMeeting(null);
+      reset();
+    } catch (error) {
+      console.error('Error saving meeting:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal menyimpan rapat',
+        icon: 'error'
+      });
     }
-
-    setIsModalOpen(false);
-    setEditingMeeting(null);
-    reset();
   };
 
   const handleEdit = (meeting: Meeting) => {
@@ -58,14 +91,65 @@ export const Meetings: React.FC = () => {
       startTime: meeting.startTime,
       endTime: meeting.endTime,
       location: meeting.location,
-      attendees: meeting.attendees.join(', ')
+      attendees: meeting.attendees.map(a => a.email).join(', ')
     });
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus rapat ini?')) {
-      deleteMeeting(id);
+  const handleDelete = async (meeting: Meeting) => {
+    const result = await Swal.fire({
+      title: 'Hapus Rapat?',
+      text: 'Apakah Anda yakin ingin menghapus rapat ini?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, hapus',
+      cancelButtonText: 'Batal',
+      reverseButtons: true
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await deleteMeeting(meeting._id || meeting.id!);
+        Swal.fire({
+          title: 'Terhapus!',
+          text: 'Rapat berhasil dihapus',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } catch (error) {
+        console.error('Error deleting meeting:', error);
+        Swal.fire({
+          title: 'Error!',
+          text: 'Gagal menghapus rapat',
+          icon: 'error'
+        });
+      }
+    }
+  };
+
+  const handleExportPDF = async (meeting: Meeting) => {
+    try {
+      const meetingId = meeting._id || meeting.id;
+      const minutes = meetingMinutes.find(m => m.meeting === meetingId);
+      const meetingAttendances = attendances.filter(a => a.meeting === meetingId);
+      
+      await exportMeetingToPDF(meeting, minutes, meetingAttendances);
+      
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Notulensi berhasil diekspor ke PDF',
+        icon: 'success',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal mengekspor PDF',
+        icon: 'error'
+      });
     }
   };
 
@@ -89,6 +173,17 @@ export const Meetings: React.FC = () => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat data rapat...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -101,7 +196,7 @@ export const Meetings: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {meetings.map((meeting) => (
-          <Card key={meeting.id} className="hover:shadow-lg transition-shadow">
+          <Card key={meeting._id || meeting.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -112,14 +207,23 @@ export const Meetings: React.FC = () => {
                 </div>
                 <div className="flex space-x-1">
                   <button
+                    onClick={() => handleExportPDF(meeting)}
+                    className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                    title="Export PDF"
+                  >
+                    <Download size={14} />
+                  </button>
+                  <button
                     onClick={() => handleEdit(meeting)}
                     className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Edit"
                   >
                     <Edit size={14} />
                   </button>
                   <button
-                    onClick={() => handleDelete(meeting.id)}
+                    onClick={() => handleDelete(meeting)}
                     className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                    title="Hapus"
                   >
                     <Trash2 size={14} />
                   </button>

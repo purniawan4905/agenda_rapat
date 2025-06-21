@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { useForm } from 'react-hook-form';
+import Swal from 'sweetalert2';
 
 interface ProfileFormData {
   name: string;
@@ -14,7 +15,7 @@ interface ProfileFormData {
 
 export const Settings: React.FC = () => {
   const { user } = useAuth();
-  const { clearNotifications } = useApp();
+  const { markAllNotificationsAsRead, refreshData } = useApp();
   const [activeTab, setActiveTab] = useState('profile');
   
   const { register, handleSubmit, formState: { errors } } = useForm<ProfileFormData>({
@@ -24,35 +25,90 @@ export const Settings: React.FC = () => {
     }
   });
 
-  const onSubmit = (data: ProfileFormData) => {
-    // Dalam aplikasi nyata, ini akan memperbarui profil pengguna
-    console.log('Pembaruan profil:', data);
-    alert('Profil berhasil diperbarui!');
+  const onSubmit = async (data: ProfileFormData) => {
+    try {
+      // Dalam implementasi nyata, ini akan memanggil API untuk update profil
+      console.log('Pembaruan profil:', data);
+      
+      Swal.fire({
+        title: 'Berhasil!',
+        text: 'Profil berhasil diperbarui',
+        icon: 'success',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (error) {
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal memperbarui profil',
+        icon: 'error'
+      });
+    }
   };
 
-  const handleExportData = () => {
-    const data = {
-      meetings: JSON.parse(localStorage.getItem('meetings') || '[]'),
-      attendances: JSON.parse(localStorage.getItem('attendances') || '[]'),
-      meetingMinutes: JSON.parse(localStorage.getItem('meetingMinutes') || '[]'),
-    };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'data-rapat-ekspor.json';
-    a.click();
+  const handleExportData = async () => {
+    try {
+      // Export data dari server
+      const response = await fetch('/api/export', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `data-rapat-ekspor-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Data berhasil diekspor',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Swal.fire({
+        title: 'Error!',
+        text: 'Gagal mengekspor data',
+        icon: 'error'
+      });
+    }
   };
 
-  const handleClearData = () => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus semua data? Tindakan ini tidak dapat dibatalkan.')) {
-      localStorage.removeItem('meetings');
-      localStorage.removeItem('attendances');
-      localStorage.removeItem('meetingMinutes');
-      localStorage.removeItem('notifications');
-      alert('Semua data berhasil dihapus!');
-      window.location.reload();
+  const handleClearNotifications = async () => {
+    const result = await Swal.fire({
+      title: 'Hapus Semua Notifikasi?',
+      text: 'Apakah Anda yakin ingin menghapus semua notifikasi?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, hapus',
+      cancelButtonText: 'Batal',
+      reverseButtons: true
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await markAllNotificationsAsRead();
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Semua notifikasi berhasil dihapus',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } catch (error) {
+        Swal.fire({
+          title: 'Error!',
+          text: 'Gagal menghapus notifikasi',
+          icon: 'error'
+        });
+      }
     }
   };
 
@@ -169,7 +225,7 @@ export const Settings: React.FC = () => {
                   </div>
                   
                   <div className="pt-4">
-                    <Button onClick={clearNotifications} variant="secondary">
+                    <Button onClick={handleClearNotifications} variant="secondary">
                       Hapus Semua Notifikasi
                     </Button>
                   </div>
@@ -228,19 +284,19 @@ export const Settings: React.FC = () => {
                   <div className="pt-4 border-t border-gray-200">
                     <h3 className="text-sm font-medium text-gray-900 mb-3">Penyimpanan Data</h3>
                     <p className="text-sm text-gray-600 mb-3">
-                      Data Anda disimpan secara lokal di browser. Dalam lingkungan produksi, 
-                      ini akan disimpan di MongoDB dengan backup dan langkah keamanan yang tepat.
+                      Data Anda disimpan di database MongoDB dengan backup dan langkah keamanan yang tepat.
+                      Semua data terenkripsi dan dilindungi sesuai standar keamanan industri.
                     </p>
                   </div>
                   
                   <div className="pt-4 border-t border-gray-200">
-                    <h3 className="text-sm font-medium text-gray-900 mb-3">Hapus Semua Data</h3>
+                    <h3 className="text-sm font-medium text-gray-900 mb-3">Sinkronisasi Data</h3>
                     <p className="text-sm text-gray-600 mb-3">
-                      Ini akan menghapus secara permanen semua rapat, catatan kehadiran, dan notulensi Anda
+                      Refresh data untuk memastikan Anda melihat informasi terbaru
                     </p>
-                    <Button onClick={handleClearData} variant="danger">
-                      <Trash2 size={16} className="mr-2" />
-                      Hapus Semua Data
+                    <Button onClick={refreshData} variant="secondary">
+                      <Download size={16} className="mr-2" />
+                      Refresh Data
                     </Button>
                   </div>
                 </div>

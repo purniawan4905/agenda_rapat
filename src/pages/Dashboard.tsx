@@ -18,7 +18,18 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from '
 import { id } from 'date-fns/locale';
 
 export const Dashboard: React.FC = () => {
-  const { meetings, attendances, meetingMinutes, notifications } = useApp();
+  const { meetings, attendances, meetingMinutes, notifications, isLoading } = useApp();
+
+  if (isLoading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Statistik
   const totalMeetings = meetings.length;
@@ -168,7 +179,7 @@ export const Dashboard: React.FC = () => {
           <div className="space-y-4">
             {notifications.slice(0, 5).map((notification) => (
               <div
-                key={notification.id}
+                key={notification._id || notification.id}
                 className={`flex items-start space-x-3 p-3 rounded-lg ${
                   notification.isRead ? 'bg-gray-50' : 'bg-blue-50'
                 }`}
