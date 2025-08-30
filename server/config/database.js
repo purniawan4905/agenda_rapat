@@ -6,9 +6,10 @@ dotenv.config();
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      dbName: 'meeting-management',
     });
+    
+    console.log("MONGODB_URI:", process.env.MONGODB_URI ? "Found" : "Not Found");
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {

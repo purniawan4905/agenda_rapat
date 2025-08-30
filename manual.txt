@@ -1,0 +1,3 @@
+src sebagai frontend (tidak perlu masuk ke cd src, langsung aja install di luar src): npm install -> npm install sweetalert2 -> npm install jspdf -> npm run dev
+
+Backend: cd sever -> npm install -> npm run dev

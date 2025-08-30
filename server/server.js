@@ -141,12 +141,16 @@ process.on('SIGTERM', () => {
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down gracefully...');
-  mongoose.connection.close(() => {
+  try {
+    await mongoose.connection.close();
     console.log('MongoDB connection closed.');
     process.exit(0);
-  });
+  } catch (err) {
+    console.error('Error during MongoDB disconnection:', err);
+    process.exit(1);
+  }
 });
 
 app.listen(PORT, () => {

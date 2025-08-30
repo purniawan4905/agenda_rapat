@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Calendar, Clock, MapPin, Users, Download, Eye } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader } from '../components/ui/Card';
@@ -21,13 +21,17 @@ interface MeetingFormData {
   endTime: string;
   location: string;
   attendees: string;
+  meetingType: 'in-person' | 'virtual' | 'hybrid';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
 }
 
 export const Meetings: React.FC = () => {
   const { meetings, addMeeting, updateMeeting, deleteMeeting, meetingMinutes, attendances, isLoading } = useApp();
   const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+  const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
   
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MeetingFormData>();
 
@@ -46,7 +50,9 @@ export const Meetings: React.FC = () => {
         startTime: data.startTime,
         endTime: data.endTime,
         location: data.location,
-        attendees: attendeesList
+        attendees: attendeesList,
+        meetingType: data.meetingType,
+        priority: data.priority
       };
 
       if (editingMeeting) {
@@ -91,9 +97,16 @@ export const Meetings: React.FC = () => {
       startTime: meeting.startTime,
       endTime: meeting.endTime,
       location: meeting.location,
-      attendees: meeting.attendees.map(a => a.email).join(', ')
+      attendees: meeting.attendees.map(a => a.email).join(', '),
+      meetingType: meeting.meetingType || 'in-person',
+      priority: meeting.priority || 'medium'
     });
     setIsModalOpen(true);
+  };
+
+  const handleView = (meeting: Meeting) => {
+    setViewingMeeting(meeting);
+    setIsViewModalOpen(true);
   };
 
   const handleDelete = async (meeting: Meeting) => {
@@ -134,15 +147,22 @@ export const Meetings: React.FC = () => {
       const minutes = meetingMinutes.find(m => m.meeting === meetingId);
       const meetingAttendances = attendances.filter(a => a.meeting === meetingId);
       
-      await exportMeetingToPDF(meeting, minutes, meetingAttendances);
-      
-      Swal.fire({
-        title: 'Berhasil!',
-        text: 'Notulensi berhasil diekspor ke PDF',
-        icon: 'success',
-        timer: 2000,
-        showConfirmButton: false
-      });
+      if (minutes) {
+        await exportMeetingToPDF(meeting, minutes, meetingAttendances);
+        Swal.fire({
+          title: 'Berhasil!',
+          text: 'Notulensi berhasil diekspor ke PDF',
+          icon: 'success',
+          timer: 2000,
+          showConfirmButton: false
+        });
+      } else {
+        Swal.fire({
+          title: 'Peringatan!',
+          text: 'Notulensi belum tersedia untuk rapat ini',
+          icon: 'warning'
+        });
+      }
     } catch (error) {
       console.error('Error exporting PDF:', error);
       Swal.fire({
@@ -170,6 +190,35 @@ export const Meetings: React.FC = () => {
       case 'completed': return 'Selesai';
       case 'cancelled': return 'Dibatalkan';
       default: return status;
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'low': return 'bg-gray-100 text-gray-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'urgent': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getPriorityText = (priority: string) => {
+    switch (priority) {
+      case 'low': return 'Rendah';
+      case 'medium': return 'Sedang';
+      case 'high': return 'Tinggi';
+      case 'urgent': return 'Mendesak';
+      default: return priority;
+    }
+  };
+
+  const getMeetingTypeText = (type: string) => {
+    switch (type) {
+      case 'in-person': return 'Tatap Muka';
+      case 'virtual': return 'Virtual';
+      case 'hybrid': return 'Hybrid';
+      default: return type;
     }
   };
 
@@ -201,11 +250,25 @@ export const Meetings: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 mb-1">{meeting.title}</h3>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(meeting.status)}`}>
-                    {getStatusText(meeting.status)}
-                  </span>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(meeting.status)}`}>
+                      {getStatusText(meeting.status)}
+                    </span>
+                    {meeting.priority && (
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(meeting.priority)}`}>
+                        {getPriorityText(meeting.priority)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex space-x-1">
+                  <button
+                    onClick={() => handleView(meeting)}
+                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Lihat Detail"
+                  >
+                    <Eye size={14} />
+                  </button>
                   <button
                     onClick={() => handleExportPDF(meeting)}
                     className="p-1 text-gray-400 hover:text-green-600 transition-colors"
@@ -250,6 +313,11 @@ export const Meetings: React.FC = () => {
                   <Users size={14} className="mr-2" />
                   {meeting.attendees.length} peserta
                 </div>
+                {meeting.meetingType && (
+                  <div className="text-xs text-gray-500">
+                    Tipe: {getMeetingTypeText(meeting.meetingType)}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -278,77 +346,187 @@ export const Meetings: React.FC = () => {
         }}
         title={editingMeeting ? 'Edit Rapat' : 'Buat Rapat Baru'}
       >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Input
-            label="Judul Rapat"
-            {...register('title', { required: 'Judul wajib diisi' })}
-            error={errors.title?.message}
-          />
-          
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Deskripsi</label>
-            <textarea
-              {...register('description', { required: 'Deskripsi wajib diisi' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              rows={3}
-            />
-            {errors.description && (
-              <p className="text-sm text-red-600">{errors.description.message}</p>
-            )}
-          </div>
-          
-          <Input
-            label="Tanggal"
-            type="date"
-            {...register('date', { required: 'Tanggal wajib diisi' })}
-            error={errors.date?.message}
-          />
-          
-          <div className="grid grid-cols-2 gap-4">
+        <div className="max-h-96 overflow-y-auto">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <Input
-              label="Waktu Mulai"
-              type="time"
-              {...register('startTime', { required: 'Waktu mulai wajib diisi' })}
-              error={errors.startTime?.message}
+              label="Judul Rapat"
+              {...register('title', { required: 'Judul wajib diisi' })}
+              error={errors.title?.message}
             />
+            
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">Deskripsi</label>
+              <textarea
+                {...register('description', { required: 'Deskripsi wajib diisi' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                rows={3}
+              />
+              {errors.description && (
+                <p className="text-sm text-red-600">{errors.description.message}</p>
+              )}
+            </div>
+            
             <Input
-              label="Waktu Selesai"
-              type="time"
-              {...register('endTime', { required: 'Waktu selesai wajib diisi' })}
-              error={errors.endTime?.message}
+              label="Tanggal"
+              type="date"
+              {...register('date', { required: 'Tanggal wajib diisi' })}
+              error={errors.date?.message}
             />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Waktu Mulai"
+                type="time"
+                {...register('startTime', { required: 'Waktu mulai wajib diisi' })}
+                error={errors.startTime?.message}
+              />
+              <Input
+                label="Waktu Selesai"
+                type="time"
+                {...register('endTime', { required: 'Waktu selesai wajib diisi' })}
+                error={errors.endTime?.message}
+              />
+            </div>
+            
+            <Input
+              label="Lokasi"
+              {...register('location', { required: 'Lokasi wajib diisi' })}
+              error={errors.location?.message}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Tipe Rapat</label>
+                <select
+                  {...register('meetingType')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="in-person">Tatap Muka</option>
+                  <option value="virtual">Virtual</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Prioritas</label>
+                <select
+                  {...register('priority')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="low">Rendah</option>
+                  <option value="medium">Sedang</option>
+                  <option value="high">Tinggi</option>
+                  <option value="urgent">Mendesak</option>
+                </select>
+              </div>
+            </div>
+            
+            <Input
+              label="Peserta (email dipisah koma)"
+              placeholder="john@example.com, jane@example.com"
+              {...register('attendees', { required: 'Minimal satu peserta diperlukan' })}
+              error={errors.attendees?.message}
+            />
+            
+            <div className="flex space-x-3 pt-4">
+              <Button type="submit" className="flex-1">
+                {editingMeeting ? 'Perbarui Rapat' : 'Buat Rapat'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingMeeting(null);
+                  reset();
+                }}
+              >
+                Batal
+              </Button>
+            </div>
+          </form>
+        </div>
+      </Modal>
+
+      {/* Modal View Detail Rapat */}
+      <Modal
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setViewingMeeting(null);
+        }}
+        title="Detail Rapat"
+      >
+        {viewingMeeting && (
+          <div className="max-h-96 overflow-y-auto space-y-4">
+            <div>
+              <h4 className="font-medium text-gray-900 mb-2">{viewingMeeting.title}</h4>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(viewingMeeting.status)}`}>
+                  {getStatusText(viewingMeeting.status)}
+                </span>
+                {viewingMeeting.priority && (
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(viewingMeeting.priority)}`}>
+                    {getPriorityText(viewingMeeting.priority)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">Deskripsi</h4>
+              <p className="text-sm text-gray-600 leading-relaxed">{viewingMeeting.description}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-medium text-gray-700 mb-2">Tanggal & Waktu</h4>
+                <p className="text-sm text-gray-600">
+                  {format(new Date(viewingMeeting.date), 'dd MMMM yyyy', { locale: id })}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {viewingMeeting.startTime} - {viewingMeeting.endTime}
+                </p>
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-700 mb-2">Lokasi</h4>
+                <p className="text-sm text-gray-600">{viewingMeeting.location}</p>
+                {viewingMeeting.meetingType && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Tipe: {getMeetingTypeText(viewingMeeting.meetingType)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">Peserta ({viewingMeeting.attendees.length})</h4>
+              <ul className="text-sm text-gray-600 space-y-1">
+                {viewingMeeting.attendees.map((attendee, index) => (
+                  <li key={index} className="flex items-center justify-between">
+                    <span>{attendee.name} ({attendee.email})</span>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      attendee.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                      attendee.status === 'declined' ? 'bg-red-100 text-red-800' :
+                      attendee.status === 'tentative' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {attendee.status === 'accepted' ? 'Diterima' :
+                       attendee.status === 'declined' ? 'Ditolak' :
+                       attendee.status === 'tentative' ? 'Ragu-ragu' : 'Diundang'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="pt-4 border-t border-gray-200">
+              <div className="text-xs text-gray-500">
+                Dibuat pada: {format(new Date(viewingMeeting.createdAt || new Date()), 'dd MMM yyyy HH:mm', { locale: id })}
+              </div>
+            </div>
           </div>
-          
-          <Input
-            label="Lokasi"
-            {...register('location', { required: 'Lokasi wajib diisi' })}
-            error={errors.location?.message}
-          />
-          
-          <Input
-            label="Peserta (email dipisah koma)"
-            placeholder="john@example.com, jane@example.com"
-            {...register('attendees', { required: 'Minimal satu peserta diperlukan' })}
-            error={errors.attendees?.message}
-          />
-          
-          <div className="flex space-x-3 pt-4">
-            <Button type="submit" className="flex-1">
-              {editingMeeting ? 'Perbarui Rapat' : 'Buat Rapat'}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setIsModalOpen(false);
-                setEditingMeeting(null);
-                reset();
-              }}
-            >
-              Batal
-            </Button>
-          </div>
-        </form>
+        )}
       </Modal>
     </div>
   );
